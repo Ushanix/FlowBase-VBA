@@ -1,0 +1,31 @@
+# Excel temporary files
+~$*.xls*
+*.xlk
+
+# VBA export backup
+*.frx
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local development
+*.local
+.env
+
+# Backup files
+*.bak
+*~
+
+# Development screenshots
+image/
