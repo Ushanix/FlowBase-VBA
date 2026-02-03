@@ -42,30 +42,159 @@ Public Sub OutputToObsidian()
     End If
 
     Application.StatusBar = "Exporting to Obsidian..."
+    Application.ScreenUpdating = False
+
+    ' Execute export for single sheet
+    Dim result As String
+    result = OutputToObsidianSheet(currentSheet)
+
+    Application.ScreenUpdating = True
+    Application.StatusBar = False
+
+    LogInfo TOOL_NAME, "========================================"
+    LogInfo TOOL_NAME, "OutputToObsidian: Completed"
+    LogInfo TOOL_NAME, "========================================"
+
+    If Left(result, 5) = "ERROR" Then
+        MsgBox result, vbExclamation, "Error"
+    Else
+        MsgBox result, vbInformation, "Complete"
+    End If
+
+    Exit Sub
+
+EH:
+    Application.ScreenUpdating = True
+    Application.StatusBar = False
+    LogError TOOL_NAME, "Error: " & Err.Description
+    MsgBox "Error: " & Err.Description, vbCritical, "Error"
+End Sub
+
+' ============================================
+' OutputToObsidianAll
+' Export all PJ sheets to Obsidian (for batch processing)
+' Called from UpdateAll
+' ============================================
+Public Sub OutputToObsidianAll()
+    On Error GoTo EH
+
+    LogInfo TOOL_NAME, "========================================"
+    LogInfo TOOL_NAME, "OutputToObsidianAll: Started"
+    LogInfo TOOL_NAME, "========================================"
+
+    Application.StatusBar = "Exporting all PJ sheets to Obsidian..."
+    Application.ScreenUpdating = False
+
+    ' Get Obsidian base path first
+    Dim basePath As String
+    basePath = GetObsidianBasePath()
+
+    If Len(basePath) = 0 Then
+        LogError TOOL_NAME, PARAM_OBSIDIAN_PATH & " not configured"
+        MsgBox PARAM_OBSIDIAN_PATH & " not configured", vbExclamation, "Error"
+        GoTo Cleanup
+    End If
+
+    ' Get all PJ sheets
+    Dim pjSheets As Collection
+    Set pjSheets = FilterSheetsByPrefix(PREFIX_PROJECT)
+
+    Dim successCount As Long
+    Dim skipCount As Long
+    Dim errorCount As Long
+    successCount = 0
+    skipCount = 0
+    errorCount = 0
+
+    Dim sheetName As Variant
+    For Each sheetName In pjSheets
+        ' Skip templates
+        If Left(CStr(sheetName), Len(PREFIX_TEMPLATE_PROJECT)) = PREFIX_TEMPLATE_PROJECT Then
+            skipCount = skipCount + 1
+            LogInfo TOOL_NAME, "Skipped template: " & CStr(sheetName)
+            GoTo NextSheet
+        End If
+
+        Application.StatusBar = "Exporting: " & CStr(sheetName) & "..."
+
+        Dim result As String
+        result = OutputToObsidianSheet(CStr(sheetName))
+
+        If Left(result, 5) = "ERROR" Or Left(result, 4) = "SKIP" Then
+            If Left(result, 4) = "SKIP" Then
+                skipCount = skipCount + 1
+            Else
+                errorCount = errorCount + 1
+            End If
+        Else
+            successCount = successCount + 1
+        End If
+
+NextSheet:
+    Next sheetName
+
+    Application.ScreenUpdating = True
+    Application.StatusBar = False
+
+    LogInfo TOOL_NAME, "========================================"
+    LogInfo TOOL_NAME, "OutputToObsidianAll: Completed"
+    LogInfo TOOL_NAME, "  Success: " & successCount & ", Skip: " & skipCount & ", Error: " & errorCount
+    LogInfo TOOL_NAME, "========================================"
+
+    MsgBox "Obsidian export completed." & vbCrLf & vbCrLf & _
+           "Success: " & successCount & " sheets" & vbCrLf & _
+           "Skipped: " & skipCount & " sheets" & vbCrLf & _
+           "Errors: " & errorCount & " sheets", vbInformation, "Complete"
+
+    Exit Sub
+
+Cleanup:
+    Application.ScreenUpdating = True
+    Application.StatusBar = False
+    Exit Sub
+
+EH:
+    Application.ScreenUpdating = True
+    Application.StatusBar = False
+    LogError TOOL_NAME, "Error: " & Err.Description
+    MsgBox "Error: " & Err.Description, vbCritical, "Error"
+End Sub
+
+' ============================================
+' OutputToObsidianSheet
+' Export a single PJ sheet to Obsidian (internal function)
+'
+' Args:
+'   sheetName: Name of the PJ sheet to export
+'
+' Returns:
+'   Result message (starts with "ERROR" or "SKIP" on failure)
+' ============================================
+Private Function OutputToObsidianSheet(sheetName As String) As String
+    On Error GoTo EH
+
+    LogInfo TOOL_NAME, "Processing sheet: " & sheetName
 
     ' Get Obsidian base path from DEF_Parameter
     Dim basePath As String
     basePath = GetObsidianBasePath()
 
     If Len(basePath) = 0 Then
-        LogError TOOL_NAME, PARAM_OBSIDIAN_PATH & " not configured"
-        MsgBox PARAM_OBSIDIAN_PATH & " not configured in " & SHEET_DEF_PARAMETER, vbExclamation, "Error"
-        GoTo Cleanup
+        OutputToObsidianSheet = "ERROR: " & PARAM_OBSIDIAN_PATH & " not configured"
+        Exit Function
     End If
 
-    LogInfo TOOL_NAME, "Base path: " & basePath
-
     Dim wsPJ As Worksheet
-    Set wsPJ = ThisWorkbook.Worksheets(currentSheet)
+    Set wsPJ = ThisWorkbook.Worksheets(sheetName)
 
     ' Get project info from header_info
     Dim projectInfo As Object
     Set projectInfo = ParseProjectInfo(wsPJ)
 
     If projectInfo.Count = 0 Then
-        LogError TOOL_NAME, "Failed to read header_info"
-        MsgBox "Failed to read header_info", vbExclamation, "Error"
-        GoTo Cleanup
+        LogError TOOL_NAME, "Failed to read header_info: " & sheetName
+        OutputToObsidianSheet = "ERROR: Failed to read header_info"
+        Exit Function
     End If
 
     ' Get vault folder from project info
@@ -75,9 +204,9 @@ Public Sub OutputToObsidian()
     End If
 
     If Len(vaultFolder) = 0 Then
-        LogError TOOL_NAME, "obsidian_path_form_vault_folder not set in header_info"
-        MsgBox "obsidian_path_form_vault_folder not set in project header", vbExclamation, "Error"
-        GoTo Cleanup
+        LogInfo TOOL_NAME, "Skipped (no vault folder): " & sheetName
+        OutputToObsidianSheet = "SKIP: obsidian_path_form_vault_folder not set"
+        Exit Function
     End If
 
     ' Construct output path
@@ -99,32 +228,22 @@ Public Sub OutputToObsidian()
     Dim tasks As Collection
     Set tasks = ParseTasks(wsPJ)
 
-    LogInfo TOOL_NAME, "Found " & tasks.Count & " tasks"
+    LogInfo TOOL_NAME, "Found " & tasks.Count & " tasks in " & sheetName
 
     ' Export task notes
     Dim taskWritten As Long
     taskWritten = ApplyToObsidian(outputDir, projectInfo, tasks, headerMapping, taskMapping)
 
-    Application.StatusBar = False
+    LogInfo TOOL_NAME, "Completed: " & sheetName & " (1 project, " & taskWritten & " tasks)"
 
-    LogInfo TOOL_NAME, "========================================"
-    LogInfo TOOL_NAME, "OutputToObsidian: Completed"
-    LogInfo TOOL_NAME, "========================================"
-
-    MsgBox "Export completed." & vbCrLf & _
-           "1 project note, " & taskWritten & " task notes.", vbInformation, "Complete"
-
-    Exit Sub
-
-Cleanup:
-    Application.StatusBar = False
-    Exit Sub
+    OutputToObsidianSheet = "Export completed: " & sheetName & vbCrLf & _
+                            "1 project note, " & taskWritten & " task notes."
+    Exit Function
 
 EH:
-    Application.StatusBar = False
-    LogError TOOL_NAME, "Error: " & Err.Description
-    MsgBox "Error: " & Err.Description, vbCritical, "Error"
-End Sub
+    LogError TOOL_NAME, "Error in " & sheetName & ": " & Err.Description
+    OutputToObsidianSheet = "ERROR: " & Err.Description
+End Function
 
 ' ============================================
 ' GetObsidianBasePath
