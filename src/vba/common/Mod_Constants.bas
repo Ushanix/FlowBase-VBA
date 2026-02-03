@@ -58,6 +58,7 @@ Public Const SHEET_OUT_TASK_URGENT As String = "OUT_TaskUrgent"
 Public Const PARAM_OBSIDIAN_PATH As String = "OBSIDIAN_PATH_FROM_SYSTEM_ROOT"
 Public Const PARAM_PROJECT_TEMPLATE As String = "PROJECT_SHEET_NAME_BY_CATEGORY_FY_SEQ"
 Public Const PARAM_PERSONAL_TEMPLATE As String = "PERSONAL_TASK_SHEET_TEMPLATE"
+Public Const PARAM_LAST_MTG_DATE As String = "LAST-MTG-DATE"
 
 ' ============================================
 ' Default Values
